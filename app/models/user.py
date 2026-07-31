@@ -22,28 +22,52 @@ class UserRole(str, enum.Enum):
 class User(TimestampMixin, Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # Telegram user id
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), default=UserRole.USER, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(
+            UserRole,
+            name="user_role",
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        default=UserRole.USER,
+        nullable=False,
+    )
 
-    # "uz" or "en". Set from Telegram's reported language_code on first /start,
-    # user can change it anytime from Settings.
-    language: Mapped[str] = mapped_column(String(2), default="en", server_default="en", nullable=False)
+    language: Mapped[str] = mapped_column(
+        String(2),
+        default="en",
+        server_default="en",
+        nullable=False,
+    )
 
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    is_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # temp pause anon messages
+    is_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     premium_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    active_link_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    active_link_token: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
 
-    link_tokens = relationship("LinkToken", back_populates="owner", cascade="all, delete-orphan")
+    link_tokens = relationship(
+        "LinkToken",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
+
     received_messages = relationship(
-        "Message", back_populates="receiver", foreign_keys="Message.receiver_id", cascade="all, delete-orphan"
+        "Message",
+        back_populates="receiver",
+        foreign_keys="Message.receiver_id",
+        cascade="all, delete-orphan",
     )
 
     @property
@@ -58,5 +82,4 @@ class User(TimestampMixin, Base):
 
     @property
     def is_admin(self) -> bool:
-        """True for both appointed admins and the super admin."""
         return self.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
