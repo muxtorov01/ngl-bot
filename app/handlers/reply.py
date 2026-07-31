@@ -7,14 +7,14 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.handlers.states import ReplyStates
 from app.keyboards.inline_kb import cancel_kb
+from app.models import Message as DbMessage
 from app.models import MessageType
-from app.repositories.message_repo import MessageRepository
 from app.repositories.user_repo import UserRepository
-from app.services.message_service import MessageService
 from app.utils.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -75,14 +75,44 @@ async def handle_reply_content(
         await state.clear()
         return
 
-    messages_repo = MessageRepository(session)
+    # Oxirgi xabarni olamiz
+    result = await session.execute(
+        select(DbMessage)
+        .where(DbMessage.thread_id == thread_id)
+        .order_by(DbMessage.id.desc())
+        .limit(1)
+    )
 
-    original = await messages_repo.get_first_inbound_by_thread(thread_id)
+    last_message = result.scalar_one_or_none()
 
-    if original is None:
+    if last_message is None:
         await message.answer(t("original_gone", lang))
         await state.clear()
         return
+
+    # Javob kimga ketishini aniqlaymiz
+    if last_message.sender_telegram_id == message.from_user.id:
+        # Oxirgi xabar o'zimdan bo'lsa, qarama-qarshi tomondagi oxirgi xabarni olamiz
+        result = await session.execute(
+            select(DbMessage)
+            .where(
+                DbMessage.thread_id == thread_id,
+                DbMessage.sender_telegram_id != message.from_user.id,
+            )
+            .order_by(DbMessage.id.desc())
+            .limit(1)
+        )
+
+        target_message = result.scalar_one_or_none()
+    else:
+        target_message = last_message
+
+    if target_message is None:
+        await message.answer(t("original_gone", lang))
+        await state.clear()
+        return
+
+    target_telegram_id = target_message.sender_telegram_id
 
     message_type, text_content, file_id = _extract(message)
 
@@ -90,24 +120,29 @@ async def handle_reply_content(
         await message.answer(t("unsupported_content", lang))
         return
 
-    messages_service = MessageService(session)
-
-    await messages_service.store_reply(
-        original_message=original,
-        receiver_id=message.from_user.id,
+    # Yangi javobni bazaga saqlaymiz
+    db_reply = DbMessage(
+        thread_id=thread_id,
+        receiver_id=target_message.receiver_id,
+        sender_telegram_id=message.from_user.id,
+        direction=target_message.direction,
         message_type=message_type,
         text_content=text_content,
         file_id=file_id,
         voice_duration=message.voice.duration if message.voice else None,
+        can_reveal_sender=False,
     )
 
-    guest = await users.get_by_telegram_id(original.sender_telegram_id)
+    session.add(db_reply)
+    await session.commit()
+
+    guest = await users.get_by_telegram_id(target_telegram_id)
     guest_lang = guest.language if guest else "en"
 
     try:
         if message_type == MessageType.TEXT:
             await bot.send_message(
-                original.sender_telegram_id,
+                target_telegram_id,
                 f"{t('reply_header', guest_lang)}\n\n{text_content}",
                 parse_mode="HTML",
                 reply_markup=_reply_back_kb(thread_id),
@@ -115,7 +150,7 @@ async def handle_reply_content(
 
         elif message_type == MessageType.PHOTO:
             await bot.send_photo(
-                original.sender_telegram_id,
+                target_telegram_id,
                 file_id,
                 caption=t("reply_caption", guest_lang),
                 reply_markup=_reply_back_kb(thread_id),
@@ -123,7 +158,7 @@ async def handle_reply_content(
 
         elif message_type == MessageType.VOICE:
             await bot.send_voice(
-                original.sender_telegram_id,
+                target_telegram_id,
                 file_id,
                 caption=t("reply_caption", guest_lang),
                 reply_markup=_reply_back_kb(thread_id),
@@ -134,7 +169,7 @@ async def handle_reply_content(
     except TelegramAPIError as exc:
         logger.warning(
             "Failed to deliver reply to %s: %s",
-            original.sender_telegram_id,
+            target_telegram_id,
             exc,
         )
         await message.answer(t("reply_delivery_failed", lang))
