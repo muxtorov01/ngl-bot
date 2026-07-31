@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 router = Router(name="start")
 
 
-# /start
 @router.message(CommandStart())
 async def cmd_start(
     message: Message,
@@ -125,7 +124,7 @@ async def cmd_settings(message: Message, session: AsyncSession) -> None:
         reply_markup=settings_kb(
             lang,
             user.is_paused,
-            user.notifications_enabled,
+            False,
         ),
     )
 
@@ -181,7 +180,7 @@ async def cmd_premium(message: Message, session: AsyncSession) -> None:
     )
 
 
-# Back tugmasi
+# ⬅️ Back
 @router.callback_query(F.data == "menu:home")
 async def cb_menu_home(
     callback: CallbackQuery,
@@ -230,7 +229,7 @@ async def cb_regenerate_link(
     await callback.answer(t("new_link_generated", lang))
 
 
-# ⏸ Xabarlarni to'xtatish / ▶️ davom ettirish
+# ⏸ / ▶️ Xabarlarni to'xtatish / davom ettirish
 @router.callback_query(F.data == "settings:pause")
 async def cb_toggle_pause(
     callback: CallbackQuery,
@@ -246,55 +245,27 @@ async def cb_toggle_pause(
 
     lang = user.language
 
-    paused = await users.toggle_pause(user)
+    # Holatni almashtiramiz
+    user.is_paused = not user.is_paused
 
-    await callback.message.edit_text(
-        t("settings_title", lang),
-        reply_markup=settings_kb(
-            lang,
-            paused,
-            user.notifications_enabled,
-        ),
-    )
-
-    await callback.answer(
-        t("messages_paused", lang)
-        if paused
-        else t("messages_resumed", lang)
-    )
-
-
-# 🔔 Bildirishnomani yoqish/o'chirish
-@router.callback_query(F.data == "settings:notify")
-async def cb_toggle_notify(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    lang = user.language
-
-    enabled = await users.toggle_notifications(user)
+    # Bazaga saqlaymiz
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
 
     await callback.message.edit_text(
         t("settings_title", lang),
         reply_markup=settings_kb(
             lang,
             user.is_paused,
-            enabled,
+            False,
         ),
     )
 
     await callback.answer(
-        t("notifications_on", lang)
-        if enabled
-        else t("notifications_off", lang)
+        t("messages_paused", lang)
+        if user.is_paused
+        else t("messages_resumed", lang)
     )
 
 
@@ -343,7 +314,7 @@ async def cb_set_language(
         reply_markup=settings_kb(
             new_lang,
             user.is_paused,
-            user.notifications_enabled,
+            False,
         ),
     )
 
