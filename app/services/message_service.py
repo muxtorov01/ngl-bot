@@ -23,10 +23,13 @@ class MessageService:
         file_id: str | None = None,
         voice_duration: int | None = None,
     ) -> Message:
-        thread = await self.messages.get_or_create_thread(receiver.id, sender_telegram_id)
-        # CRITICAL premium rule: reveal-eligibility is frozen at the moment the
-        # message is received, based on the receiver's premium status *right now*.
+        thread = await self.messages.get_or_create_thread(
+            receiver.id,
+            sender_telegram_id,
+        )
+
         can_reveal = receiver.is_premium_active
+
         message = await self.messages.add_inbound_message(
             thread=thread,
             receiver_id=receiver.id,
@@ -39,6 +42,7 @@ class MessageService:
             voice_duration=voice_duration,
             can_reveal_sender=can_reveal,
         )
+
         return message
 
     async def store_reply(
@@ -51,7 +55,11 @@ class MessageService:
         file_id: str | None = None,
         voice_duration: int | None = None,
     ) -> Message:
-        thread = await self.session.get(MessageThread, original_message.thread_id)
+        thread = await self.session.get(
+            MessageThread,
+            original_message.thread_id,
+        )
+
         reply = await self.messages.add_reply_message(
             thread=thread,
             receiver_id=receiver_id,
@@ -61,11 +69,27 @@ class MessageService:
             file_id=file_id,
             voice_duration=voice_duration,
         )
+
         await self.messages.mark_answered(original_message)
+
         return reply
 
-    async def find_by_delivered_message(self, receiver_id: int, chat_message_id: int) -> Message | None:
-        return await self.messages.get_by_delivered_chat_message_id(receiver_id, chat_message_id)
+    async def find_by_delivered_message(
+        self,
+        receiver_id: int,
+        chat_message_id: int,
+    ) -> Message | None:
+        return await self.messages.get_by_delivered_chat_message_id(
+            receiver_id,
+            chat_message_id,
+        )
 
-    async def link_delivered_message(self, message: Message, chat_message_id: int) -> None:
-        await self.messages.set_delivered_chat_message_id(message, chat_message_id)
+    async def link_delivered_message(
+        self,
+        message: Message,
+        chat_message_id: int,
+    ) -> None:
+        await self.messages.set_delivered_chat_message_id(
+            message,
+            chat_message_id,
+        )
