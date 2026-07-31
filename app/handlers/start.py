@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.handlers.states import AnonymousSendStates
-from app.keyboards.inline_kb import send_prompt_kb
+from app.keyboards.inline_kb import send_prompt_kb, stats_menu_kb
 from app.keyboards.main_kb import language_kb, link_kb, settings_kb
 from app.services.user_service import UserService
 from app.utils.i18n import t
@@ -40,7 +40,6 @@ async def cmd_start(
     lang = user.language
     token = command.args
 
-    # Foydalanuvchi boshqa odamning linkini ochdi
     if token and token != user.active_link_token:
         receiver = await users.resolve_receiver_by_token(token)
 
@@ -81,11 +80,9 @@ async def cmd_start(
 
         return
 
-    # Oddiy /start
     await message.answer(t("welcome", lang))
 
 
-# ☰ MENU: /link
 @router.message(Command("link"))
 async def cmd_link(message: Message, session: AsyncSession) -> None:
     users = UserService(session)
@@ -106,7 +103,6 @@ async def cmd_link(message: Message, session: AsyncSession) -> None:
     )
 
 
-# ☰ MENU: /settings
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, session: AsyncSession) -> None:
     users = UserService(session)
@@ -129,7 +125,6 @@ async def cmd_settings(message: Message, session: AsyncSession) -> None:
     )
 
 
-# ☰ MENU: /stats
 @router.message(Command("stats"))
 async def cmd_stats(message: Message, session: AsyncSession) -> None:
     users = UserService(session)
@@ -140,10 +135,18 @@ async def cmd_stats(message: Message, session: AsyncSession) -> None:
         message.from_user.full_name,
     )
 
-    await message.answer(t("stats_loading", user.language))
+    lang = user.language
+
+    if not user.is_premium_active:
+        await message.answer(t("premium_feature_locked", lang))
+        return
+
+    await message.answer(
+        t("stats_title", lang),
+        reply_markup=stats_menu_kb(lang),
+    )
 
 
-# ☰ MENU: /premium
 @router.message(Command("premium"))
 async def cmd_premium(message: Message, session: AsyncSession) -> None:
     users = UserService(session)
@@ -154,41 +157,25 @@ async def cmd_premium(message: Message, session: AsyncSession) -> None:
         message.from_user.full_name,
     )
 
-    await message.answer(t("premium_title", user.language))
-
-
-@router.callback_query(F.data == "link:regenerate")
-async def cb_regenerate_link(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
     lang = user.language
 
-    token = await users.regenerate_link(user)
-    url = personal_link(token)
+    if user.is_premium_active:
+        await message.answer(
+            "⭐ Sizda Premium allaqachon faol."
+            if lang == "uz"
+            else "⭐ Your Premium is already active."
+        )
+        return
 
-    await callback.message.edit_text(
-        t("link_regenerated", lang, url=url),
-        parse_mode="HTML",
-        reply_markup=link_kb(lang, token),
+    await message.answer(
+        "⭐ Premium funksiyalari:\n\n• 📊 Batafsil statistika\n• 🔎 Kim yozganini ko‘rish\n• 🚀 Qo‘shimcha imkoniyatlar"
+        if lang == "uz"
+        else "⭐ Premium features:\n\n• 📊 Detailed statistics\n• 🔎 Reveal sender\n• 🚀 Extra features"
     )
-
-    await callback.answer(t("new_link_generated", lang))
 
 
 @router.callback_query(F.data == "settings:pause")
-async def cb_toggle_pause(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
+async def cb_toggle_pause(callback: CallbackQuery, session: AsyncSession) -> None:
     users = UserService(session)
 
     user = await users.get_or_register(
@@ -198,7 +185,6 @@ async def cb_toggle_pause(
     )
 
     lang = user.language
-
     paused = await users.toggle_pause(user)
 
     await callback.message.edit_text(
@@ -218,10 +204,7 @@ async def cb_toggle_pause(
 
 
 @router.callback_query(F.data == "settings:notify")
-async def cb_toggle_notify(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
+async def cb_toggle_notify(callback: CallbackQuery, session: AsyncSession) -> None:
     users = UserService(session)
 
     user = await users.get_or_register(
@@ -231,7 +214,6 @@ async def cb_toggle_notify(
     )
 
     lang = user.language
-
     enabled = await users.toggle_notifications(user)
 
     await callback.message.edit_text(
@@ -251,10 +233,7 @@ async def cb_toggle_notify(
 
 
 @router.callback_query(F.data == "settings:language")
-async def cb_choose_language(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
+async def cb_choose_language(callback: CallbackQuery, session: AsyncSession) -> None:
     users = UserService(session)
 
     user = await users.get_or_register(
@@ -272,10 +251,7 @@ async def cb_choose_language(
 
 
 @router.callback_query(F.data.startswith("lang:"))
-async def cb_set_language(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
+async def cb_set_language(callback: CallbackQuery, session: AsyncSession) -> None:
     new_lang = callback.data.split(":", 1)[1]
 
     users = UserService(session)
@@ -301,10 +277,7 @@ async def cb_set_language(
 
 
 @router.callback_query(F.data == "info:anonymous")
-async def cb_info_anonymous(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
+async def cb_info_anonymous(callback: CallbackQuery, session: AsyncSession) -> None:
     users = UserService(session)
 
     user = await users.get_or_register(
