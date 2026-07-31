@@ -98,6 +98,19 @@ class MessageRepository:
         await self.session.flush()
         return msg
 
+    async def get_first_inbound_by_thread(self, thread_id: int) -> Message | None:
+        result = await self.session.execute(
+            select(Message)
+            .where(
+                Message.thread_id == thread_id,
+                Message.direction == MessageDirection.INBOUND,
+            )
+            .order_by(Message.id.asc())
+            .limit(1)
+        )
+
+        return result.scalar_one_or_none()
+
     async def set_delivered_chat_message_id(
         self,
         message: Message,
