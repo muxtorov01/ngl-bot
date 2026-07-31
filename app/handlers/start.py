@@ -2,361 +2,262 @@ from __future__ import annotations
 
 import logging
 
-from aiogram import F, Router
-from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.handlers.states import AnonymousSendStates
-from app.keyboards.inline_kb import send_prompt_kb, stats_menu_kb
-from app.keyboards.main_kb import language_kb, link_kb, settings_kb
-from app.services.user_service import UserService
+from app.keyboards.inline_kb import received_message_kb
+from app.models import MessageType
+from app.repositories.moderation_repo import BlockRepository
+from app.repositories.user_repo import UserRepository
+from app.services.antispam_service import AntiSpamService
+from app.services.message_service import MessageService
 from app.utils.i18n import t
-from app.utils.text import escape_html, personal_link
+from app.utils.text import escape_html
 
 logger = logging.getLogger(__name__)
-router = Router(name="start")
+router = Router(name="anonymous_send")
 
 
-@router.message(CommandStart())
-async def cmd_start(
+@router.message(
+    AnonymousSendStates.waiting_message,
+    F.content_type.in_({"text", "photo", "voice"}),
+)
+async def handle_anonymous_content(
     message: Message,
-    command: CommandObject,
     session: AsyncSession,
     state: FSMContext,
+    bot: Bot,
+    rate_limited: bool = False,
 ) -> None:
-    await state.clear()
 
-    users = UserService(session)
+    users = UserRepository(session)
 
-    user = await users.get_or_register(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        full_name=message.from_user.full_name,
-        telegram_language_code=message.from_user.language_code,
-    )
+    guest = await users.get_by_telegram_id(message.from_user.id)
 
-    lang = user.language
-    token = command.args
+    lang = guest.language if guest else "en"
 
-    # Boshqa odamning linki ochilgan
-    if token and token != user.active_link_token:
-        receiver = await users.resolve_receiver_by_token(token)
+    data = await state.get_data()
 
-        if receiver is None:
-            await message.answer(t("link_invalid", lang))
-            return
+    receiver_id = data.get("receiver_id")
+    receiver_telegram_id = data.get("receiver_telegram_id")
 
-        if receiver.telegram_id == message.from_user.id:
-            await message.answer(t("your_own_link", lang))
-            return
-
-        if receiver.is_banned:
-            await message.answer(t("receiver_unavailable", lang))
-            return
-
-        if receiver.is_paused:
-            await message.answer(t("receiver_paused", lang))
-            return
-
-        await state.update_data(
-            receiver_id=receiver.id,
-            receiver_telegram_id=receiver.telegram_id,
-        )
-
-        await state.set_state(AnonymousSendStates.waiting_message)
-
-        name = escape_html(
-            receiver.full_name
-            or receiver.username
-            or "this user"
-        )
-
-        await message.answer(
-            t("send_prompt", lang, name=name),
-            parse_mode="HTML",
-            reply_markup=send_prompt_kb(lang),
-        )
-
+    if receiver_id is None:
+        await message.answer(t("link_session_expired", lang))
+        await state.clear()
         return
 
-    # Oddiy /start
-    await message.answer(t("welcome", lang))
-
-
-# ☰ /link
-@router.message(Command("link"))
-async def cmd_link(message: Message, session: AsyncSession) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name,
-    )
-
-    lang = user.language
-    url = personal_link(user.active_link_token)
-
-    await message.answer(
-        t("your_link", lang, url=url),
-        parse_mode="HTML",
-        reply_markup=link_kb(lang, user.active_link_token),
-    )
-
-
-# ☰ /settings
-@router.message(Command("settings"))
-async def cmd_settings(message: Message, session: AsyncSession) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name,
-    )
-
-    lang = user.language
-
-    await message.answer(
-        t("settings_title", lang),
-        reply_markup=settings_kb(
-            lang,
-            user.is_paused,
-            False,
-        ),
-    )
-
-
-# ☰ /stats
-@router.message(Command("stats"))
-async def cmd_stats(message: Message, session: AsyncSession) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name,
-    )
-
-    lang = user.language
-
-    if not user.is_premium_active:
-        await message.answer(t("premium_feature_locked", lang))
+    if rate_limited:
+        await message.answer(t("rate_limited", lang))
         return
 
-    await message.answer(
-        t("stats_title", lang),
-        reply_markup=stats_menu_kb(lang),
-    )
+    # Qabul qiluvchini olamiz
+    receiver = await users.get_by_id(receiver_id)
 
+    if receiver is None or receiver.is_banned:
+        await message.answer(t("receiver_unavailable", lang))
+        await state.clear()
+        return
 
-# ☰ /premium
-@router.message(Command("premium"))
-async def cmd_premium(message: Message, session: AsyncSession) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name,
-    )
-
-    lang = user.language
-
-    if user.is_premium_active:
+    # ⏸ XABARLARNI TO'XTATISH
+    if bool(receiver.is_paused):
         await message.answer(
-            "⭐ Sizda Premium allaqachon faol."
+            "⏸ Bu foydalanuvchi hozircha anonim xabarlarni qabul qilmayapti."
             if lang == "uz"
-            else "⭐ Your Premium is already active."
+            else "⏸ This user is not accepting anonymous messages right now."
         )
+        await state.clear()
         return
 
-    await message.answer(
-        "⭐ Premium funksiyalari:\n\n• 📊 Batafsil statistika\n• 🔎 Kim yozganini ko‘rish\n• 🚀 Qo‘shimcha imkoniyatlar"
-        if lang == "uz"
-        else "⭐ Premium features:\n\n• 📊 Detailed statistics\n• 🔎 Reveal sender\n• 🚀 Extra features"
+    # Blok tekshiruvi
+    blocks = BlockRepository(session)
+
+    if await blocks.is_blocked(receiver_id, message.from_user.id):
+        await message.answer(t("sender_blocked", lang))
+        return
+
+    # Kontentni ajratish
+    (
+        message_type,
+        text_content,
+        file_id,
+        voice_duration,
+        error_key,
+    ) = _extract_content(message)
+
+    if error_key:
+        await message.answer(t(error_key, lang))
+        return
+
+    # Antispam
+    antispam = AntiSpamService(session)
+
+    dup = await antispam.check_duplicate(
+        message.from_user.id,
+        receiver_id,
+        text_content,
     )
 
+    if not dup.allowed:
+        await message.answer(t("duplicate_message", lang))
+        return
 
-# ⬅️ Back
-@router.callback_query(F.data == "menu:home")
-async def cb_menu_home(
-    callback: CallbackQuery,
-    session: AsyncSession,
-    state: FSMContext,
-) -> None:
+    # Bazaga saqlash
+    messages_service = MessageService(session)
+
+    stored = await messages_service.store_inbound(
+        receiver=receiver,
+        sender_telegram_id=message.from_user.id,
+        sender_username=message.from_user.username,
+        sender_full_name=message.from_user.full_name,
+        message_type=message_type,
+        text_content=text_content,
+        file_id=file_id,
+        voice_duration=voice_duration,
+    )
+
+    # Qabul qiluvchiga yuborish
+    delivered = await _deliver_to_receiver(
+        bot,
+        receiver.language,
+        receiver_telegram_id,
+        message_type,
+        text_content,
+        file_id,
+        stored.id,
+        stored.can_reveal_sender,
+    )
+
+    if delivered is not None:
+        await messages_service.link_delivered_message(
+            stored,
+            delivered.message_id,
+        )
+
+    await message.answer(t("message_delivered", lang))
+
     await state.clear()
 
-    users = UserService(session)
 
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
+def _extract_content(
+    message: Message,
+) -> tuple[
+    MessageType | None,
+    str | None,
+    str | None,
+    int | None,
+    str | None,
+]:
+
+    if message.text:
+        return MessageType.TEXT, message.text, None, None, None
+
+    if message.photo:
+        largest = message.photo[-1]
+
+        if (
+            largest.file_size
+            and largest.file_size > settings.max_photo_bytes
+        ):
+            return None, None, None, None, "photo_too_large"
+
+        return (
+            MessageType.PHOTO,
+            message.caption,
+            largest.file_id,
+            None,
+            None,
+        )
+
+    if message.voice:
+
+        if message.voice.duration > settings.max_voice_seconds:
+            return None, None, None, None, "voice_too_long"
+
+        if (
+            message.voice.file_size
+            and message.voice.file_size > settings.max_voice_bytes
+        ):
+            return None, None, None, None, "voice_too_large"
+
+        return (
+            MessageType.VOICE,
+            None,
+            message.voice.file_id,
+            message.voice.duration,
+            None,
+        )
+
+    return None, None, None, None, "unsupported_content"
+
+
+async def _deliver_to_receiver(
+    bot: Bot,
+    receiver_lang: str,
+    receiver_telegram_id: int,
+    message_type: MessageType,
+    text_content: str | None,
+    file_id: str | None,
+    stored_message_id: int,
+    can_reveal: bool,
+) -> Message | None:
+
+    kb = received_message_kb(
+        receiver_lang,
+        stored_message_id,
+        can_reveal,
     )
 
-    await callback.message.edit_text(t("welcome", user.language))
-    await callback.answer()
+    header = t("new_anonymous_message", receiver_lang)
 
+    try:
 
-# Linkni yangilash
-@router.callback_query(F.data == "link:regenerate")
-async def cb_regenerate_link(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    users = UserService(session)
+        if message_type == MessageType.TEXT:
 
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
+            body = escape_html(text_content or "")
 
-    lang = user.language
+            return await bot.send_message(
+                receiver_telegram_id,
+                f"{header}\n\n{body}",
+                parse_mode="HTML",
+                reply_markup=kb,
+            )
 
-    token = await users.regenerate_link(user)
-    url = personal_link(token)
+        if message_type == MessageType.PHOTO:
 
-    await callback.message.edit_text(
-        t("link_regenerated", lang, url=url),
-        parse_mode="HTML",
-        reply_markup=link_kb(lang, token),
-    )
+            caption = f"{header}"
 
-    await callback.answer(t("new_link_generated", lang))
+            if text_content:
+                caption += f"\n\n{escape_html(text_content)}"
 
+            return await bot.send_photo(
+                receiver_telegram_id,
+                file_id,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=kb,
+            )
 
-# ⏸ / ▶️ Xabarlarni to'xtatish / davom ettirish
-@router.callback_query(F.data == "settings:pause")
-async def cb_toggle_pause(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    users = UserService(session)
+        if message_type == MessageType.VOICE:
 
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
+            return await bot.send_voice(
+                receiver_telegram_id,
+                file_id,
+                caption=header,
+                parse_mode="HTML",
+                reply_markup=kb,
+            )
 
-    lang = user.language
+    except TelegramAPIError as exc:
 
-    # Holatni almashtiramiz
-    user.is_paused = not user.is_paused
+        logger.warning(
+            "Failed to deliver anonymous message to %s: %s",
+            receiver_telegram_id,
+            exc,
+        )
 
-    # Bazaga saqlaymiz
-    session.add(user)
-    await session.commit()
-    await session.refresh(user)
-
-    await callback.message.edit_text(
-        t("settings_title", lang),
-        reply_markup=settings_kb(
-            lang,
-            user.is_paused,
-            False,
-        ),
-    )
-
-    await callback.answer(
-        t("messages_paused", lang)
-        if user.is_paused
-        else t("messages_resumed", lang)
-    )
-
-
-# 🌐 Til tanlash
-@router.callback_query(F.data == "settings:language")
-async def cb_choose_language(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    await callback.message.edit_text(
-        t("choose_language", user.language),
-        reply_markup=language_kb(),
-    )
-
-    await callback.answer()
-
-
-# Tilni o'zgartirish
-@router.callback_query(F.data.startswith("lang:"))
-async def cb_set_language(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    new_lang = callback.data.split(":", 1)[1]
-
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    await users.set_language(user, new_lang)
-
-    await callback.message.edit_text(
-        t("settings_title", new_lang),
-        reply_markup=settings_kb(
-            new_lang,
-            user.is_paused,
-            False,
-        ),
-    )
-
-    await callback.answer(t("language_updated", new_lang))
-
-
-# ℹ️ Anonymous info
-@router.callback_query(F.data == "info:anonymous")
-async def cb_info_anonymous(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    await callback.answer(
-        t("info_anonymous", user.language),
-        show_alert=True,
-    )
-
-
-# ❌ Cancel
-@router.callback_query(F.data == "cancel")
-async def cb_cancel(
-    callback: CallbackQuery,
-    session: AsyncSession,
-    state: FSMContext,
-) -> None:
-    await state.clear()
-
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    await callback.message.edit_text(t("cancelled", user.language))
-    await callback.answer()
+    return None
