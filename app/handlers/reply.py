@@ -21,16 +21,16 @@ logger = logging.getLogger(__name__)
 router = Router(name="reply")
 
 
-def _reply_back_kb(original_message_id: int):
+def _reply_back_kb(thread_id: int):
     kb = InlineKeyboardBuilder()
     kb.button(
         text="↩️ Javob yozish",
-        callback_data=f"reply:{original_message_id}",
+        callback_data=f"thread:{thread_id}",
     )
     return kb.as_markup()
 
 
-@router.callback_query(F.data.startswith("reply:"))
+@router.callback_query(F.data.startswith("thread:"))
 async def cb_start_reply(
     callback: CallbackQuery,
     session: AsyncSession,
@@ -40,16 +40,16 @@ async def cb_start_reply(
     user = await users.get_by_telegram_id(callback.from_user.id)
     lang = user.language if user else "en"
 
-    original_message_id = int(callback.data.split(":", 1)[1])
+    thread_id = int(callback.data.split(":", 1)[1])
 
     messages = MessageRepository(session)
-    original = await messages.get_by_id(original_message_id)
+    original = await messages.get_first_inbound_by_thread(thread_id)
 
     if original is None:
         await callback.answer(t("message_not_found", lang), show_alert=True)
         return
 
-    await state.update_data(reply_to_message_id=original_message_id)
+    await state.update_data(thread_id=thread_id)
     await state.set_state(ReplyStates.waiting_reply)
 
     await callback.message.answer(
@@ -75,15 +75,15 @@ async def handle_reply_content(
     lang = user.language if user else "en"
 
     data = await state.get_data()
-    original_message_id = data.get("reply_to_message_id")
+    thread_id = data.get("thread_id")
 
-    if original_message_id is None:
+    if thread_id is None:
         await message.answer(t("reply_session_expired", lang))
         await state.clear()
         return
 
     messages_repo = MessageRepository(session)
-    original = await messages_repo.get_by_id(original_message_id)
+    original = await messages_repo.get_first_inbound_by_thread(thread_id)
 
     if original is None:
         await message.answer(t("original_gone", lang))
@@ -98,7 +98,6 @@ async def handle_reply_content(
 
     messages_service = MessageService(session)
 
-    # Javobni bazaga saqlaymiz
     await messages_service.store_reply(
         original_message=original,
         receiver_id=message.from_user.id,
@@ -112,13 +111,12 @@ async def handle_reply_content(
     guest_lang = guest.language if guest else "en"
 
     try:
-        # MUHIM: tugma doim original anonim xabar ID bilan qoladi
         if message_type == MessageType.TEXT:
             await bot.send_message(
                 original.sender_telegram_id,
                 f"{t('reply_header', guest_lang)}\n\n{text_content}",
                 parse_mode="HTML",
-                reply_markup=_reply_back_kb(original.id),
+                reply_markup=_reply_back_kb(original.thread_id),
             )
 
         elif message_type == MessageType.PHOTO:
@@ -126,7 +124,7 @@ async def handle_reply_content(
                 original.sender_telegram_id,
                 file_id,
                 caption=t("reply_caption", guest_lang),
-                reply_markup=_reply_back_kb(original.id),
+                reply_markup=_reply_back_kb(original.thread_id),
             )
 
         elif message_type == MessageType.VOICE:
@@ -134,7 +132,7 @@ async def handle_reply_content(
                 original.sender_telegram_id,
                 file_id,
                 caption=t("reply_caption", guest_lang),
-                reply_markup=_reply_back_kb(original.id),
+                reply_markup=_reply_back_kb(original.thread_id),
             )
 
         await message.answer(t("reply_sent", lang))
