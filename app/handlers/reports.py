@@ -4,19 +4,19 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.keyboards.inline_kb import report_reasons_kb
 from app.repositories.message_repo import MessageRepository
-from app.repositories.moderation_repo import BlockRepository, ReportRepository
+from app.repositories.moderation_repo import BlockRepository
 from app.repositories.user_repo import UserRepository
 from app.utils.i18n import t
 
 router = Router(name="moderation")
 
-# NOTE: received_message_kb's buttons now send the THREAD id (see
-# app/keyboards/inline_kb.py + app/handlers/reply.py), not a message id.
-# We resolve it back to the thread's original inbound message here, since
-# that message carries the sender info / can_reveal_sender flag these
-# actions need.
+# MUHIM: reveal/block tugmalari xabarning O'ZINING id'sini yuboradi
+# (thread id emas) - chunki can_reveal_sender har bir xabar uchun
+# alohida, shu payt qabul qiluvchining Premium holatiga qarab
+# hisoblanadi. Thread id orqali "birinchi xabar"ni olish xato edi:
+# suhbat davomida keyinroq kelgan (Premiumdan keyingi) xabarlar ham
+# noto'g'ri ravishda "Premiumdan oldin" deb ko'rsatilardi.
 
 
 @router.callback_query(F.data.startswith("reveal:"))
@@ -25,9 +25,9 @@ async def cb_reveal_sender(callback: CallbackQuery, session: AsyncSession) -> No
     user = await users.get_by_telegram_id(callback.from_user.id)
     lang = user.language if user else "en"
 
-    thread_id = int(callback.data.split(":", 1)[1])
+    message_id = int(callback.data.split(":", 1)[1])
     messages = MessageRepository(session)
-    msg = await messages.get_first_inbound_by_thread(thread_id)
+    msg = await messages.get_by_id(message_id)
     if msg is None or msg.receiver_id != callback.from_user.id:
         await callback.answer(t("message_not_found", lang), show_alert=True)
         return
@@ -46,9 +46,9 @@ async def cb_block_sender(callback: CallbackQuery, session: AsyncSession) -> Non
     user = await users.get_by_telegram_id(callback.from_user.id)
     lang = user.language if user else "en"
 
-    thread_id = int(callback.data.split(":", 1)[1])
+    message_id = int(callback.data.split(":", 1)[1])
     messages = MessageRepository(session)
-    msg = await messages.get_first_inbound_by_thread(thread_id)
+    msg = await messages.get_by_id(message_id)
     if msg is None or msg.receiver_id != callback.from_user.id:
         await callback.answer(t("message_not_found", lang), show_alert=True)
         return
@@ -59,39 +59,3 @@ async def cb_block_sender(callback: CallbackQuery, session: AsyncSession) -> Non
         return
     await blocks.block(callback.from_user.id, msg.sender_telegram_id)
     await callback.answer(t("sender_now_blocked", lang), show_alert=True)
-
-
-@router.callback_query(F.data.startswith("report:"))
-async def cb_report_start(callback: CallbackQuery, session: AsyncSession) -> None:
-    users = UserRepository(session)
-    user = await users.get_by_telegram_id(callback.from_user.id)
-    lang = user.language if user else "en"
-
-    thread_id = int(callback.data.split(":", 1)[1])
-    await callback.message.answer(t("report_why", lang), reply_markup=report_reasons_kb(lang, thread_id))
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("report_reason:"))
-async def cb_report_reason(callback: CallbackQuery, session: AsyncSession) -> None:
-    users = UserRepository(session)
-    user = await users.get_by_telegram_id(callback.from_user.id)
-    lang = user.language if user else "en"
-
-    _, thread_id_str, reason = callback.data.split(":", 2)
-    thread_id = int(thread_id_str)
-
-    messages = MessageRepository(session)
-    msg = await messages.get_first_inbound_by_thread(thread_id)
-    if msg is None or msg.receiver_id != callback.from_user.id:
-        await callback.answer(t("message_not_found", lang), show_alert=True)
-        return
-
-    reports = ReportRepository(session)
-    # Store the resolved real message id, so the admin panel (which expects
-    # Report.message_id to be an actual messages.id) keeps working unchanged.
-    await reports.create(message_id=msg.id, reporter_id=callback.from_user.id, reason=reason)
-    await messages.mark_reported(msg)
-
-    await callback.message.edit_text(t("report_submitted", lang, reason=reason), parse_mode="HTML")
-    await callback.answer()
