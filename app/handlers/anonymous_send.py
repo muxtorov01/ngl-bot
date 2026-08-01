@@ -116,7 +116,7 @@ async def handle_anonymous_content(
         message_type=message_type,
         text_content=text_content,
         file_id=file_id,
-        stored_message_id=stored.id,
+        thread_id=stored.thread_id,
         can_reveal=stored.can_reveal_sender,
     )
 
@@ -190,13 +190,13 @@ async def _deliver_to_receiver(
     message_type: MessageType,
     text_content: str | None,
     file_id: str | None,
-    stored_message_id: int,
+    thread_id: int,
     can_reveal: bool,
 ) -> Message | None:
 
     kb = received_message_kb(
         receiver_lang,
-        stored_message_id,
+        thread_id,
         can_reveal,
     )
 
