@@ -38,10 +38,6 @@ def received_message_kb(
                 text=_block_label(lang),
                 callback_data=f"block:{thread_id}",
             ),
-            InlineKeyboardButton(
-                text=_report_label(lang),
-                callback_data=f"report:{thread_id}",
-            ),
         ]
     )
 
@@ -58,10 +54,6 @@ def _reveal_label(lang: str) -> str:
 
 def _block_label(lang: str) -> str:
     return "🚫 Bloklash" if lang == "uz" else "🚫 Block sender"
-
-
-def _report_label(lang: str) -> str:
-    return "⚠️ Shikoyat" if lang == "uz" else "⚠️ Report"
 
 
 def send_prompt_kb(lang: str) -> InlineKeyboardMarkup:
