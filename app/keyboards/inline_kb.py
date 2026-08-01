@@ -6,9 +6,12 @@ from app.models import Plan
 from app.utils.i18n import t
 
 
-# THREAD bilan ishlaydigan keyboard
+# Reply har doim thread ID bilan ishlaydi (suhbat zanjiri uchun),
+# lekin reveal/block AYNAN shu xabarning o'ziga tegishli bo'lishi kerak -
+# aks holda "kim yubordi" eski xabar holatini ko'rsatib qoladi.
 def received_message_kb(
     lang: str,
+    message_id: int,
     thread_id: int,
     can_reveal: bool = False,
 ) -> InlineKeyboardMarkup:
@@ -17,7 +20,7 @@ def received_message_kb(
         [
             InlineKeyboardButton(
                 text=_reply_label(lang),
-                callback_data=f"thread:{thread_id}",  # MUHIM
+                callback_data=f"thread:{thread_id}",
             )
         ]
     ]
@@ -27,7 +30,7 @@ def received_message_kb(
             [
                 InlineKeyboardButton(
                     text=_reveal_label(lang),
-                    callback_data=f"reveal:{thread_id}",
+                    callback_data=f"reveal:{message_id}",
                 )
             ]
         )
@@ -36,7 +39,7 @@ def received_message_kb(
         [
             InlineKeyboardButton(
                 text=_block_label(lang),
-                callback_data=f"block:{thread_id}",
+                callback_data=f"block:{message_id}",
             ),
         ]
     )
