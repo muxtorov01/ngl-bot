@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.utils.i18n import t
@@ -71,13 +73,16 @@ def main_menu_kb(
 
 def link_kb(lang: str, token: str) -> InlineKeyboardMarkup:
     url = personal_link(token)
+    # Telegram’ning o'z "ulashish" oynasini ochadi - hech qanday bot
+    # username qo'shilmaydi, faqat toza havolaning o'zi yuboriladi.
+    share_url = f"https://t.me/share/url?url={quote(url, safe='')}"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=t("btn_share_link", lang),
-                    switch_inline_query=url,
+                    url=share_url,
                 )
             ],
             [
