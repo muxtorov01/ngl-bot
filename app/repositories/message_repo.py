@@ -176,3 +176,98 @@ class MessageRepository:
         )
 
         return result.scalar_one()
+
+    # ---- Statistics helpers (used by StatsService) ----
+
+    async def stats_between(self, receiver_id: int, start: dt.datetime, end: dt.datetime) -> dict:
+        base = select(Message).where(
+            Message.receiver_id == receiver_id,
+            Message.direction == MessageDirection.INBOUND,
+            Message.created_at >= start,
+            Message.created_at < end,
+        )
+        result = await self.session.execute(base)
+        messages = list(result.scalars().all())
+
+        total = len(messages)
+        answered = sum(1 for m in messages if m.is_answered)
+        voice = sum(1 for m in messages if m.message_type == MessageType.VOICE)
+        photo = sum(1 for m in messages if m.message_type == MessageType.PHOTO)
+        return {
+            "total": total,
+            "answered": answered,
+            "voice": voice,
+            "photo": photo,
+            "messages": messages,
+        }
+
+    async def top_senders(self, receiver_id: int, limit: int = 5) -> list[tuple[int, str | None, int]]:
+        """Only counts revealable messages, grouped by sender."""
+        result = await self.session.execute(
+            select(
+                Message.sender_telegram_id,
+                Message.sender_username,
+                func.count(Message.id).label("cnt"),
+            )
+            .where(
+                Message.receiver_id == receiver_id,
+                Message.direction == MessageDirection.INBOUND,
+                Message.can_reveal_sender.is_(True),
+            )
+            .group_by(Message.sender_telegram_id, Message.sender_username)
+            .order_by(func.count(Message.id).desc())
+            .limit(limit)
+        )
+        return list(result.all())
+
+    async def average_response_seconds(self, receiver_id: int, start: dt.datetime, end: dt.datetime) -> float | None:
+        """For each answered inbound message in range, find the next reply in
+        the same thread and average the time-to-first-reply."""
+        result = await self.session.execute(
+            select(Message)
+            .where(
+                Message.receiver_id == receiver_id,
+                Message.direction == MessageDirection.INBOUND,
+                Message.is_answered.is_(True),
+                Message.created_at >= start,
+                Message.created_at < end,
+            )
+        )
+        inbound_messages = list(result.scalars().all())
+        if not inbound_messages:
+            return None
+
+        deltas: list[float] = []
+        for inbound in inbound_messages:
+            reply_result = await self.session.execute(
+                select(Message)
+                .where(
+                    Message.thread_id == inbound.thread_id,
+                    Message.direction == MessageDirection.REPLY,
+                    Message.created_at > inbound.created_at,
+                )
+                .order_by(Message.created_at.asc())
+                .limit(1)
+            )
+            reply = reply_result.scalar_one_or_none()
+            if reply:
+                deltas.append((reply.created_at - inbound.created_at).total_seconds())
+
+        if not deltas:
+            return None
+        return sum(deltas) / len(deltas)
+
+    async def monthly_counts(self, receiver_id: int, year: int) -> dict[int, int]:
+        result = await self.session.execute(
+            select(
+                func.extract("month", Message.created_at).label("month"),
+                func.count(Message.id),
+            )
+            .where(
+                Message.receiver_id == receiver_id,
+                Message.direction == MessageDirection.INBOUND,
+                func.extract("year", Message.created_at) == year,
+            )
+            .group_by("month")
+        )
+        return {int(month): count for month, count in result.all()}
