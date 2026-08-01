@@ -180,37 +180,6 @@ async def cmd_stats(message: Message, session: AsyncSession) -> None:
 
 
 # =========================
-# /premium
-# =========================
-@router.message(Command("premium"))
-async def cmd_premium(message: Message, session: AsyncSession) -> None:
-
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name,
-    )
-
-    lang = user.language
-
-    if user.is_premium_active:
-        await message.answer(
-            "⭐ Sizda Premium allaqachon faol."
-            if lang == "uz"
-            else "⭐ Your Premium is already active."
-        )
-        return
-
-    await message.answer(
-        "⭐ Premium funksiyalari:\n\n• 📊 Batafsil statistika\n• 🔎 Kim yozganini ko‘rish\n• 🚀 Qo‘shimcha imkoniyatlar"
-        if lang == "uz"
-        else "⭐ Premium features:\n\n• 📊 Detailed statistics\n• 🔎 Reveal sender\n• 🚀 Extra features"
-    )
-
-
-# =========================
 # Back
 # =========================
 @router.callback_query(F.data == "menu:home")
