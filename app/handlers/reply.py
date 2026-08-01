@@ -1,4 +1,4 @@
-from __future__ import annotations
+=from __future__ import annotations
 
 import logging
 
@@ -210,7 +210,7 @@ async def handle_reply_content(
             # to'liq to'plam kerak - reply/reveal/block/report.
             header = t("new_anonymous_message", guest_lang)
             caption = header
-            kb = received_message_kb(guest_lang, thread_id, can_reveal)
+            kb = received_message_kb(guest_lang, db_reply.id, thread_id, can_reveal)
 
         if message_type == MessageType.TEXT:
             body = f"{header}\n\n{text_content}"
