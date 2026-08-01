@@ -14,6 +14,10 @@ class PlanRepository:
         result = await self.session.execute(select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.duration_days))
         return list(result.scalars().all())
 
+    # Alias used by app/handlers/premium.py — kept so both names work.
+    async def get_active_plans(self) -> list[Plan]:
+        return await self.list_active()
+
     async def list_all(self) -> list[Plan]:
         result = await self.session.execute(select(Plan).order_by(Plan.duration_days))
         return list(result.scalars().all())
