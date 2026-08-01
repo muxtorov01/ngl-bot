@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 from aiogram import Bot, F, Router
@@ -12,19 +13,15 @@ from app.handlers.states import AdminBroadcastStates, AdminManageStates, AdminPr
 from app.keyboards.admin_kb import (
     admin_home_kb,
     admin_prices_kb,
-    admin_report_actions_kb,
     confirm_broadcast_kb,
     manage_admins_kb,
 )
-from app.models import ReportStatus, User
-from app.repositories.message_repo import MessageRepository
-from app.repositories.moderation_repo import ReportRepository
+from app.models import User
 from app.repositories.plan_repo import PlanRepository
 from app.repositories.user_repo import UserRepository
 from app.services.admin_service import AdminService
 from app.services.broadcast_service import BroadcastService
 from app.utils.i18n import t
-from app.utils.text import escape_html
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -95,74 +92,6 @@ async def cb_admin_overview(callback: CallbackQuery, session: AsyncSession) -> N
     )
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=admin_home_kb(lang, user.is_super_admin))
     await callback.answer()
-
-
-# ---- Reports ----
-
-@router.callback_query(F.data == "admin:reports")
-async def cb_admin_reports(callback: CallbackQuery, session: AsyncSession) -> None:
-    user = await _require_admin(callback, session)
-    if user is None:
-        return
-    lang = user.language
-    admin = AdminService(session)
-    reports = await admin.open_reports()
-    if not reports:
-        await callback.message.edit_text(t("no_open_reports", lang), reply_markup=admin_home_kb(lang, user.is_super_admin))
-        await callback.answer()
-        return
-
-    r = reports[0]
-    messages = MessageRepository(session)
-    msg = await messages.get_by_id(r.message_id)
-    preview = escape_html((msg.text_content or f"[{msg.message_type.value}]") if msg else "[deleted]")
-    text = t("report_info", lang, id=r.id, reason=escape_html(r.reason or "—"), preview=preview, count=len(reports))
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=admin_report_actions_kb(lang, r.id, r.message_id))
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("admin:ban_from_report:"))
-async def cb_admin_ban_from_report(callback: CallbackQuery, session: AsyncSession) -> None:
-    user = await _require_admin(callback, session)
-    if user is None:
-        return
-    lang = user.language
-    report_id = int(callback.data.split(":", 2)[2])
-    reports = ReportRepository(session)
-    messages = MessageRepository(session)
-    users = UserRepository(session)
-    admin = AdminService(session)
-
-    all_open = await reports.list_open(limit=100)
-    report = next((r for r in all_open if r.id == report_id), None)
-    if report is None:
-        await callback.answer(t("report_not_found", lang), show_alert=True)
-        return
-
-    msg = await messages.get_by_id(report.message_id)
-    if msg:
-        sender = await users.get_by_telegram_id(msg.sender_telegram_id)
-        if sender:
-            await admin.ban_user(sender)
-    await reports.set_status(report, ReportStatus.REVIEWED)
-    await callback.answer(t("sender_banned", lang))
-    await cb_admin_reports(callback, session)
-
-
-@router.callback_query(F.data.startswith("admin:dismiss_report:"))
-async def cb_admin_dismiss_report(callback: CallbackQuery, session: AsyncSession) -> None:
-    user = await _require_admin(callback, session)
-    if user is None:
-        return
-    lang = user.language
-    report_id = int(callback.data.split(":", 2)[2])
-    reports = ReportRepository(session)
-    all_open = await reports.list_open(limit=100)
-    report = next((r for r in all_open if r.id == report_id), None)
-    if report:
-        await reports.set_status(report, ReportStatus.DISMISSED)
-    await callback.answer(t("dismissed", lang))
-    await cb_admin_reports(callback, session)
 
 
 # ---- Ban / unban by command ----
@@ -438,3 +367,37 @@ async def cmd_remove_admin(message: Message, session: AsyncSession) -> None:
     await admin.demote_admin(target)
     name = target.full_name or target.username or str(target.telegram_id)
     await message.answer(t("admin_removed", lang, name=name))
+
+
+# ---- Free premium grant (super admin only, no payment involved) ----
+
+@router.message(Command("grantpremium"))
+async def cmd_grant_premium(message: Message, session: AsyncSession) -> None:
+    user = await _require_super_admin(message, session)
+    if user is None:
+        return
+    lang = user.language
+
+    parts = message.text.split()
+    if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+        await message.answer(t("grantpremium_usage", lang))
+        return
+
+    target_telegram_id = int(parts[1])
+    days = int(parts[2])
+    if days <= 0:
+        await message.answer(t("grantpremium_days_invalid", lang))
+        return
+
+    users = UserRepository(session)
+    target = await users.get_by_telegram_id(target_telegram_id)
+    if target is None:
+        await message.answer(t("user_not_found", lang))
+        return
+
+    until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)
+    await users.activate_premium(target, until)
+
+    name = target.full_name or target.username or str(target.telegram_id)
+    expires = target.premium_until.strftime("%Y-%m-%d %H:%M UTC") if target.premium_until else "?"
+    await message.answer(t("premium_granted", lang, name=name, days=days, expires=expires))
