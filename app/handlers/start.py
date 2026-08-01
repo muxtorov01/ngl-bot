@@ -244,6 +244,66 @@ async def cb_menu_home(
 
 
 # =========================
+# Menu - Link
+# =========================
+@router.callback_query(F.data == "menu:link")
+async def cb_menu_link(
+    callback: CallbackQuery,
+    session: AsyncSession,
+) -> None:
+
+    users = UserService(session)
+
+    user = await users.get_or_register(
+        callback.from_user.id,
+        callback.from_user.username,
+        callback.from_user.full_name,
+    )
+
+    lang = user.language
+    url = personal_link(user.active_link_token)
+
+    await callback.message.edit_text(
+        t("your_link", lang, url=url),
+        parse_mode="HTML",
+        reply_markup=link_kb(lang, user.active_link_token),
+    )
+
+    await callback.answer()
+
+
+# =========================
+# Menu - Settings
+# =========================
+@router.callback_query(F.data == "menu:settings")
+async def cb_menu_settings(
+    callback: CallbackQuery,
+    session: AsyncSession,
+) -> None:
+
+    users = UserService(session)
+
+    user = await users.get_or_register(
+        callback.from_user.id,
+        callback.from_user.username,
+        callback.from_user.full_name,
+    )
+
+    lang = user.language
+
+    await callback.message.edit_text(
+        t("settings_title", lang),
+        reply_markup=settings_kb(
+            lang,
+            user.is_paused,
+            False,
+        ),
+    )
+
+    await callback.answer()
+
+
+# =========================
 # Linkni yangilash
 # =========================
 @router.callback_query(F.data == "link:regenerate")
@@ -293,9 +353,8 @@ async def cb_toggle_pause(
 
     lang = user.language
 
-    user.is_paused = not user.is_paused
+    user.is_paused = not bool(user.is_paused)
 
-    session.add(user)
     await session.commit()
     await session.refresh(user)
 
@@ -309,9 +368,9 @@ async def cb_toggle_pause(
     )
 
     await callback.answer(
-        t("messages_paused", lang)
+        "⏸ Xabarlar to‘xtatildi"
         if user.is_paused
-        else t("messages_resumed", lang)
+        else "▶️ Xabarlar qayta yoqildi"
     )
 
 
@@ -371,53 +430,3 @@ async def cb_set_language(
     )
 
     await callback.answer(t("language_updated", new_lang))
-
-
-# =========================
-# Info
-# =========================
-@router.callback_query(F.data == "info:anonymous")
-async def cb_info_anonymous(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> None:
-
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    await callback.answer(
-        t("info_anonymous", user.language),
-        show_alert=True,
-    )
-
-
-# =========================
-# Cancel
-# =========================
-@router.callback_query(F.data == "cancel")
-async def cb_cancel(
-    callback: CallbackQuery,
-    session: AsyncSession,
-    state: FSMContext,
-) -> None:
-
-    await state.clear()
-
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        callback.from_user.id,
-        callback.from_user.username,
-        callback.from_user.full_name,
-    )
-
-    await callback.message.edit_text(
-        t("cancelled", user.language)
-    )
-
-    await callback.answer()
