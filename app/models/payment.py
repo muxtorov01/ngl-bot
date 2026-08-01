@@ -23,7 +23,7 @@ class Payment(TimestampMixin, Base):
     plan_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("plans.id"), index=True)
 
     stars_amount: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus, name="payment_status"), default=PaymentStatus.PENDING)
+    status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus, name="payment_status", values_callable=lambda x: [e.value for e in x]), default=PaymentStatus.PENDING)
 
     telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(256), nullable=True, unique=True)
     invoice_payload: Mapped[str] = mapped_column(String(256), nullable=False)
