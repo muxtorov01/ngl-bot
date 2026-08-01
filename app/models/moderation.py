@@ -33,7 +33,7 @@ class Report(TimestampMixin, Base):
     message_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("messages.id", ondelete="CASCADE"), index=True)
     reporter_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus, name="report_status"), default=ReportStatus.OPEN)
+    status: Mapped[ReportStatus] = mapped_column(Enum(ReportStatus, name="report_status", values_callable=lambda x: [e.value for e in x]), default=ReportStatus.OPEN)
 
 
 class BroadcastStatus(str, enum.Enum):
@@ -50,7 +50,7 @@ class Broadcast(TimestampMixin, Base):
     created_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    status: Mapped[BroadcastStatus] = mapped_column(Enum(BroadcastStatus, name="broadcast_status"), default=BroadcastStatus.PENDING)
+    status: Mapped[BroadcastStatus] = mapped_column(Enum(BroadcastStatus, name="broadcast_status", values_callable=lambda x: [e.value for e in x]), default=BroadcastStatus.PENDING)
     total_targets: Mapped[int] = mapped_column(Integer, default=0)
     sent_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
