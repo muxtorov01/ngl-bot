@@ -34,13 +34,16 @@ async def handle_anonymous_content(
     bot: Bot,
     rate_limited: bool = False,
 ) -> None:
+
     users = UserRepository(session)
+
     guest = await users.get_by_telegram_id(message.from_user.id)
+
     lang = guest.language if guest else "en"
 
     data = await state.get_data()
+
     receiver_id = data.get("receiver_id")
-    receiver_telegram_id = data.get("receiver_telegram_id")
 
     if receiver_id is None:
         await message.answer(t("link_session_expired", lang))
@@ -60,6 +63,7 @@ async def handle_anonymous_content(
 
     if receiver.is_paused:
         await message.answer(t("receiver_paused", lang))
+        await state.clear()
         return
 
     blocks = BlockRepository(session)
@@ -108,12 +112,11 @@ async def handle_anonymous_content(
     delivered = await _deliver_to_receiver(
         bot=bot,
         receiver_lang=receiver.language,
-        receiver_telegram_id=receiver_telegram_id,
+        receiver_telegram_id=receiver.telegram_id,
         message_type=message_type,
         text_content=text_content,
         file_id=file_id,
-        thread_id=stored.thread_id,  # ENG MUHIM JOY
-        notifications_enabled=receiver.notifications_enabled,
+        stored_message_id=stored.id,
         can_reveal=stored.can_reveal_sender,
     )
 
@@ -124,6 +127,7 @@ async def handle_anonymous_content(
         )
 
     await message.answer(t("message_delivered", lang))
+
     await state.clear()
 
 
@@ -136,13 +140,17 @@ def _extract_content(
     int | None,
     str | None,
 ]:
+
     if message.text:
         return MessageType.TEXT, message.text, None, None, None
 
     if message.photo:
         largest = message.photo[-1]
 
-        if largest.file_size and largest.file_size > settings.max_photo_bytes:
+        if (
+            largest.file_size
+            and largest.file_size > settings.max_photo_bytes
+        ):
             return None, None, None, None, "photo_too_large"
 
         return (
@@ -154,6 +162,7 @@ def _extract_content(
         )
 
     if message.voice:
+
         if message.voice.duration > settings.max_voice_seconds:
             return None, None, None, None, "voice_too_long"
 
@@ -181,20 +190,22 @@ async def _deliver_to_receiver(
     message_type: MessageType,
     text_content: str | None,
     file_id: str | None,
-    thread_id: int,
-    notifications_enabled: bool,
+    stored_message_id: int,
     can_reveal: bool,
 ) -> Message | None:
-    if not notifications_enabled:
-        return None
 
-    # THREAD bilan keyboard
-    kb = received_message_kb(receiver_lang, thread_id, can_reveal)
+    kb = received_message_kb(
+        receiver_lang,
+        stored_message_id,
+        can_reveal,
+    )
 
     header = t("new_anonymous_message", receiver_lang)
 
     try:
+
         if message_type == MessageType.TEXT:
+
             body = escape_html(text_content or "")
 
             return await bot.send_message(
@@ -205,7 +216,8 @@ async def _deliver_to_receiver(
             )
 
         if message_type == MessageType.PHOTO:
-            caption = header
+
+            caption = f"{header}"
 
             if text_content:
                 caption += f"\n\n{escape_html(text_content)}"
@@ -219,6 +231,7 @@ async def _deliver_to_receiver(
             )
 
         if message_type == MessageType.VOICE:
+
             return await bot.send_voice(
                 receiver_telegram_id,
                 file_id,
@@ -228,6 +241,7 @@ async def _deliver_to_receiver(
             )
 
     except TelegramAPIError as exc:
+
         logger.warning(
             "Failed to deliver anonymous message to %s: %s",
             receiver_telegram_id,
