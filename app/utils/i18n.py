@@ -281,6 +281,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     "admin_removed": {"en": "✅ {name} is no longer an admin.", "uz": "✅ {name} endi admin emas."},
     "admin_usage": {"en": "Usage: /addadmin <telegram_id>", "uz": "Foydalanish: /addadmin <telegram_id>"},
     "removeadmin_usage": {"en": "Usage: /removeadmin <telegram_id>", "uz": "Foydalanish: /removeadmin <telegram_id>"},
+    "grantpremium_usage": {
+        "en": "Usage: /grantpremium <telegram_id> <days>",
+        "uz": "Foydalanish: /grantpremium <telegram_id> <kun_soni>",
+    },
+    "grantpremium_days_invalid": {
+        "en": "Days must be a positive whole number.",
+        "uz": "Kun soni musbat butun son bo'lishi kerak.",
+    },
+    "premium_granted": {
+        "en": "🎁 Granted {days} day(s) of Premium to {name}.\nExpires: {expires}",
+        "uz": "🎁 {name}ga {days} kunlik Premium berildi.\nMuddati: {expires}",
+    },
 }
 
 
