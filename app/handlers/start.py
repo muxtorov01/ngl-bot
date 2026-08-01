@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.handlers.states import AnonymousSendStates
-from app.keyboards.inline_kb import send_prompt_kb, stats_menu_kb
+from app.keyboards.inline_kb import send_prompt_kb
 from app.keyboards.main_kb import (
     main_menu_kb,
     language_kb,
@@ -150,32 +150,6 @@ async def cmd_settings(message: Message, session: AsyncSession) -> None:
             user.is_paused,
             False,
         ),
-    )
-
-
-# =========================
-# /stats
-# =========================
-@router.message(Command("stats"))
-async def cmd_stats(message: Message, session: AsyncSession) -> None:
-
-    users = UserService(session)
-
-    user = await users.get_or_register(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name,
-    )
-
-    lang = user.language
-
-    if not user.is_premium_active:
-        await message.answer(t("premium_feature_locked", lang))
-        return
-
-    await message.answer(
-        t("stats_title", lang),
-        reply_markup=stats_menu_kb(lang),
     )
 
 
@@ -399,3 +373,4 @@ async def cb_set_language(
     )
 
     await callback.answer(t("language_updated", new_lang))
+    
