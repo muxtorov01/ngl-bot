@@ -68,7 +68,6 @@ async def setup_menu(bot: Bot) -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Asosiy menyu"),
         BotCommand(command="link", description="Mening anonim linkim"),
-        BotCommand(command="stats", description="Statistika"),
         BotCommand(command="premium", description="Premium"),
         BotCommand(command="settings", description="Sozlamalar"),
     ])
