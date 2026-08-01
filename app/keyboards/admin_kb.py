@@ -10,7 +10,6 @@ def admin_home_kb(lang: str, is_super_admin: bool) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text=t("btn_admin_overview", lang), callback_data="admin:overview")],
         [InlineKeyboardButton(text=t("btn_admin_broadcast", lang), callback_data="admin:broadcast")],
-        [InlineKeyboardButton(text=t("btn_admin_reports", lang), callback_data="admin:reports")],
         [InlineKeyboardButton(text=t("btn_admin_prices", lang), callback_data="admin:prices")],
     ]
     if is_super_admin:
@@ -26,15 +25,6 @@ def admin_prices_kb(lang: str, plans: list[Plan]) -> InlineKeyboardMarkup:
     ]
     rows.append([InlineKeyboardButton(text=t("btn_back", lang), callback_data="admin:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def admin_report_actions_kb(lang: str, report_id: int, message_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=t("btn_ban_sender", lang), callback_data=f"admin:ban_from_report:{report_id}")],
-            [InlineKeyboardButton(text=t("btn_dismiss", lang), callback_data=f"admin:dismiss_report:{report_id}")],
-        ]
-    )
 
 
 def confirm_broadcast_kb(lang: str) -> InlineKeyboardMarkup:
