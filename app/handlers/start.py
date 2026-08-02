@@ -19,6 +19,7 @@ from app.keyboards.main_kb import (
 from app.services.user_service import UserService
 from app.utils.i18n import t
 from app.utils.text import escape_html, personal_link
+from app.utils.telegram_helpers import safe_edit_text
 
 logger = logging.getLogger(__name__)
 router = Router(name="start")
@@ -173,7 +174,7 @@ async def cb_menu_home(
         callback.from_user.full_name,
     )
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("welcome", user.language),
         reply_markup=main_menu_kb(
             user.language,
@@ -206,7 +207,7 @@ async def cb_menu_link(
     lang = user.language
     url = personal_link(user.active_link_token)
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("your_link", lang, url=url),
         parse_mode="HTML",
         reply_markup=link_kb(lang, user.active_link_token),
@@ -234,7 +235,7 @@ async def cb_menu_settings(
 
     lang = user.language
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("settings_title", lang),
         reply_markup=settings_kb(
             lang,
@@ -268,7 +269,7 @@ async def cb_regenerate_link(
     token = await users.regenerate_link(user)
     url = personal_link(token)
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("link_regenerated", lang, url=url),
         parse_mode="HTML",
         reply_markup=link_kb(lang, token),
@@ -301,7 +302,7 @@ async def cb_toggle_pause(
     await session.commit()
     await session.refresh(user)
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("settings_title", lang),
         reply_markup=settings_kb(
             lang,
@@ -334,7 +335,7 @@ async def cb_choose_language(
         callback.from_user.full_name,
     )
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("choose_language", user.language),
         reply_markup=language_kb(),
     )
@@ -363,7 +364,7 @@ async def cb_set_language(
 
     await users.set_language(user, new_lang)
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("settings_title", new_lang),
         reply_markup=settings_kb(
             new_lang,
@@ -373,4 +374,3 @@ async def cb_set_language(
     )
 
     await callback.answer(t("language_updated", new_lang))
-    
