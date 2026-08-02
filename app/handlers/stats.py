@@ -9,6 +9,7 @@ from app.keyboards.main_kb import back_kb
 from app.repositories.user_repo import UserRepository
 from app.services.stats_service import StatsService
 from app.utils.i18n import t
+from app.utils.telegram_helpers import safe_edit_text
 
 router = Router(name="stats")
 
@@ -28,7 +29,7 @@ async def cb_stats_menu(callback: CallbackQuery, session: AsyncSession) -> None:
     user = await _require_premium(callback, session)
     if user is None:
         return
-    await callback.message.edit_text(t("stats_title", user.language), reply_markup=stats_menu_kb(user.language))
+    await safe_edit_text(callback.message, t("stats_title", user.language), reply_markup=stats_menu_kb(user.language))
     await callback.answer()
 
 
@@ -49,7 +50,7 @@ async def cb_stats_daily(callback: CallbackQuery, session: AsyncSession) -> None
         f"{t('stats_photos', lang)}: {d['photo_count']}\n"
         f"{t('stats_avg_response', lang)}: {avg}"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
+    await safe_edit_text(callback.message, text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
     await callback.answer()
 
 
@@ -68,7 +69,7 @@ async def cb_stats_weekly(callback: CallbackQuery, session: AsyncSession) -> Non
         f"{t('stats_most_active_day', lang)}: {w['most_active_day'] or '—'}\n"
         f"{t('stats_answer_rate', lang)}: {w['answer_rate']}%"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
+    await safe_edit_text(callback.message, text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
     await callback.answer()
 
 
@@ -93,7 +94,7 @@ async def cb_stats_yearly(callback: CallbackQuery, session: AsyncSession) -> Non
         f"{t('stats_total_replies', lang)}: {y['total_replies']}\n"
         f"{t('stats_best_month', lang)}: {best}"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
+    await safe_edit_text(callback.message, text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
     await callback.answer()
 
 
@@ -119,5 +120,5 @@ async def cb_stats_top(callback: CallbackQuery, session: AsyncSession) -> None:
 
     hours_str = ", ".join(f"{h}:00" for h in hours) if hours else "—"
     text = f"{t('top_senders_title', lang)}\n\n" + "\n".join(lines) + f"\n\n{t('most_active_hours', lang)} {hours_str}"
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
+    await safe_edit_text(callback.message, text, parse_mode="HTML", reply_markup=back_kb(lang, "menu:stats"))
     await callback.answer()
