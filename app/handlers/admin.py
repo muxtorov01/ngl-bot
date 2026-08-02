@@ -22,6 +22,7 @@ from app.repositories.user_repo import UserRepository
 from app.services.admin_service import AdminService
 from app.services.broadcast_service import BroadcastService
 from app.utils.i18n import t
+from app.utils.telegram_helpers import safe_edit_text
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -69,7 +70,7 @@ async def cb_admin_home(callback: CallbackQuery, session: AsyncSession, state: F
     if user is None:
         return
     await state.clear()
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("admin_panel_title", user.language), reply_markup=admin_home_kb(user.language, user.is_super_admin)
     )
     await callback.answer()
@@ -90,7 +91,7 @@ async def cb_admin_overview(callback: CallbackQuery, session: AsyncSession) -> N
         f"{t('overview_premium_users', lang)}: {data['premium_users']}\n"
         f"{t('overview_revenue', lang)}: {data['revenue_stars']}⭐"
     )
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=admin_home_kb(lang, user.is_super_admin))
+    await safe_edit_text(callback.message, text, parse_mode="HTML", reply_markup=admin_home_kb(lang, user.is_super_admin))
     await callback.answer()
 
 
@@ -146,7 +147,7 @@ async def cb_admin_prices(callback: CallbackQuery, session: AsyncSession) -> Non
     lang = user.language
     plans = PlanRepository(session)
     all_plans = await plans.list_all()
-    await callback.message.edit_text(t("manage_prices_title", lang), reply_markup=admin_prices_kb(lang, all_plans))
+    await safe_edit_text(callback.message, t("manage_prices_title", lang), reply_markup=admin_prices_kb(lang, all_plans))
     await callback.answer()
 
 
@@ -233,7 +234,7 @@ async def cb_admin_broadcast_confirm(callback: CallbackQuery, session: AsyncSess
     broadcast = await broadcast_service.create_and_run(
         bot, callback.from_user.id, data.get("text_content"), data.get("photo_file_id")
     )
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("broadcast_done", lang, sent=broadcast.sent_count, failed=broadcast.failed_count, total=broadcast.total_targets)
     )
     await callback.answer()
@@ -250,7 +251,7 @@ async def cb_manage_admins(callback: CallbackQuery, session: AsyncSession) -> No
     admin = AdminService(session)
     admins = await admin.list_admins()
     text = t("manage_admins_title", lang) if admins else f"{t('manage_admins_title', lang)}\n\n{t('no_admins', lang)}"
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=manage_admins_kb(lang, admins))
+    await safe_edit_text(callback.message, text, parse_mode="HTML", reply_markup=manage_admins_kb(lang, admins))
     await callback.answer()
 
 
