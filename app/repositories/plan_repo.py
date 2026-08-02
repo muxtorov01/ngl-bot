@@ -34,10 +34,11 @@ class PlanRepository:
         await self.session.flush()
 
     async def ensure_defaults(self) -> None:
-        """Seed the three mandatory plans if they don't exist yet."""
+        """Seed the mandatory plans if they don't exist yet."""
         defaults = [
             ("daily", "Daily Premium", 50, 1),
             ("weekly", "Weekly Premium", 250, 7),
+            ("monthly", "Monthly Premium", 800, 30),
             ("yearly", "Yearly Premium", 4990, 365),
         ]
         for code, name, price, days in defaults:
