@@ -10,6 +10,7 @@ from app.keyboards.main_kb import back_kb
 from app.repositories.plan_repo import PlanRepository
 from app.repositories.user_repo import UserRepository
 from app.utils.i18n import t
+from app.utils.telegram_helpers import safe_edit_text
 
 router = Router(name="premium")
 
@@ -40,7 +41,7 @@ async def show_premium_menu(callback: CallbackQuery, session: AsyncSession) -> N
 
     available = await plans.get_active_plans()
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         _premium_text(lang),
         parse_mode="HTML",
         reply_markup=premium_plans_kb(lang, available),
@@ -95,7 +96,7 @@ async def cb_premium_back(
     user = await users.get_by_telegram_id(callback.from_user.id)
     lang = user.language if user else "en"
 
-    await callback.message.edit_text(
+    await safe_edit_text(callback.message, 
         t("main_menu", lang),
         reply_markup=back_kb(lang),
     )
