@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.moderation_repo import BlockRepository
 from app.repositories.user_repo import UserRepository
 from app.utils.i18n import t
+from app.utils.telegram_helpers import safe_edit_text
 
 router = Router(name="settings")
 
@@ -25,7 +26,7 @@ async def cb_blocked_list(callback: CallbackQuery, session: AsyncSession) -> Non
 
     if not blocked:
         rows = [[InlineKeyboardButton(text=t("btn_back", lang), callback_data="menu:home")]]
-        await callback.message.edit_text(t("no_blocked_users", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        await safe_edit_text(callback.message, t("no_blocked_users", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer()
         return
 
@@ -34,7 +35,7 @@ async def cb_blocked_list(callback: CallbackQuery, session: AsyncSession) -> Non
         for b in blocked
     ]
     rows.append([InlineKeyboardButton(text=t("btn_back", lang), callback_data="menu:home")])
-    await callback.message.edit_text(t("blocked_list_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await safe_edit_text(callback.message, t("blocked_list_title", lang), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await callback.answer()
 
 
